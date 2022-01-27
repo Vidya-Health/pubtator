@@ -4,14 +4,21 @@ This file contains a single function that can query the pubtator API for annotat
 PMCIDs.
 """
 import logging
-from typing import List, Tuple
+from typing import Union
+from enum import Enum
 
 import requests
 
 
+class PubtatorDatabase(Enum):
+    pubmed: str = "pmids"
+    pmc: str = "pmcids"
+
+
 def request_annotations(
-    ids: List[int],
-    concepts: Tuple[str, ...] = ("gene", "disease"),
+    ids: list[Union[int, str]],
+    database: PubtatorDatabase = PubtatorDatabase.pubmed,
+    concepts: tuple[str, ...] = ("gene", "disease"),
     pubtator: bool = True,
 ) -> str:
     """Requests annotated documents from the pubtator central api.
@@ -25,6 +32,7 @@ def request_annotations(
 
     Arguments:
         ids: A list of pmids to request information on.
+        database: A PubtatorDatabase enum value specifying the database to request information on.
         concepts: A list of concepts from (gene, disease, chemical, species, mutation and/or cellline).
         pubtator: Set True to return in pubtator format, False will instead result in biocjson.
 
@@ -33,12 +41,13 @@ def request_annotations(
         in biocjson format).
     """
     # Base url
-    fmt = "pubtator" if pubtator else "biocjson"
-    url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/{}".format(fmt)
+    assert not (pubtator and database == PubtatorDatabase.pmc), "PMC must have pubtator set to False."
+    fmt = "pubtator" if pubtator else "biocxml"
+    url = f"https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/{fmt}"
 
     # id and concept params
     params = {
-        "pmids": ",".join([str(x) for x in ids]),
+        database.value: ",".join([str(x) for x in ids]),
         "concepts": ",".join(concepts),
     }
 
@@ -52,5 +61,9 @@ def request_annotations(
                 response.status_code, response, response.url
             )
         )
+
+    if database == PubtatorDatabase.pmc:
+        if len(response.text) < 500:
+            raise FileNotFoundError("No PMC articles found.")
 
     return response.text

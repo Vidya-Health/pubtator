@@ -1,3 +1,4 @@
+import pytest
 import pubtator
 
 
@@ -13,4 +14,28 @@ def test_request_annotations() -> None:
                 "Chronic Hepatitis B	Disease	MESH:D019694",
             )
         ]
+    )
+
+
+def test_request_pmcid() -> None:
+    # Check we can get pmcid information
+    fail_ids = ["PMC1666769", "PMC1666842", "PMC1666801"]
+    with pytest.raises(FileNotFoundError):
+        _ = pubtator.request_annotations(
+            fail_ids,
+            database=pubtator.request.PubtatorDatabase.pmc,
+            concepts=("gene", "disease", "chemical"),
+            pubtator=False,
+        )
+
+    pass_ids = ["PMC7571963", "PMC4623938"]
+    annotations = pubtator.request_annotations(
+        pass_ids,
+        database=pubtator.request.PubtatorDatabase.pmc,
+        concepts=("gene", "disease", "chemical"),
+        pubtator=False,
+    )
+    assert (
+        isinstance(p, pubtator.AnnotatedPubtatorAbstract)
+        for p in pubtator.parse.parse_pubtator_pmc_request_string(annotations)
     )

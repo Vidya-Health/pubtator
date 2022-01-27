@@ -20,7 +20,7 @@ def get_pubmed_ids_in_daterange(email: str, start_date: int, end_date: int = 300
 
     # Get the PubMed IDs for the given date range.
     handle = Entrez.esearch(
-        db="pmc",
+        db="pubmed",
         term='("%s"[Date - Publication] : "%s"[Date - Publication]) ' % (start_date, end_date),
         retmax=100000000,
     )
@@ -32,29 +32,6 @@ def get_pubmed_ids_in_daterange(email: str, start_date: int, end_date: int = 300
     return pmids
 
 
-# def pubmed_to_pmc(email: str, pmids: list[int]) -> list[str]:
-#     """Converts pmids to pmcids."""
-#     Entrez.email = email
-#
-#     # Main function
-#     handle = Entrez.elink(dbfrom="pubmed", db="pmc", linkname="pubmed_pmc", id=pmids)
-#
-#     # Read results
-#     results = Entrez.read(handle)
-#
-#     # Open out the PMC ids
-#     pmcids = []
-#     for result in results:
-#         linkset = result['LinkSetDb']
-#         if len(linkset) > 0:
-#             pmcids.append(linkset[0]['Link'][0]['Id'])
-#         else:
-#             pmcids.append(None)
-#
-#     # Add the 'PMC' prefix to the PMC ids
-#     return [f"PMC{pmcid}" if pmcid is not None else None for pmcid in pmcids]
-
-
 def pubmed_to_pmc(pmids: list[int]) -> dict[str, str]:
     """Converts pmids to pmcids requesting from the url.
 
@@ -64,11 +41,15 @@ def pubmed_to_pmc(pmids: list[int]) -> dict[str, str]:
     Returns:
         A dict that maps pmid to pmcid, if no pmcid pmid maps to None.
     """
-    pmid_string = ','.join(str(pmid) for pmid in pmids)
+    pmid_string = ",".join(str(pmid) for pmid in pmids)
     url = f"""
         https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?tool=my_tool&email=my_email@example.com&ids=
         {pmid_string}&format=json
-    """.replace(' ', '').replace('\n', '')
+    """.replace(
+        " ", ""
+    ).replace(
+        "\n", ""
+    )
 
     # Request
     response = requests.get(url)
@@ -76,8 +57,8 @@ def pubmed_to_pmc(pmids: list[int]) -> dict[str, str]:
     # Handle
     if response.status_code == 200:
         data = json.loads(response.text)
-        records = data['records']
-        mapping = {r['pmid']: r.get('pmcid', None) for r in records}
+        records = data["records"]
+        mapping = {r["pmid"]: r.get("pmcid", None) for r in records}
     else:
         raise Exception("Error: {response.status_code}")
 

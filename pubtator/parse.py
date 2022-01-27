@@ -1,11 +1,15 @@
 """Parsing functions to handle the output of the Pubtator requests.
 
 """
+import collections
 import logging
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Any
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
+import pandas as pd
+import xmltodict
 
 
 @dataclass
@@ -82,6 +86,124 @@ def parse_pubtator_request_string(
                 logging.warning("Abstract could not be parsed with error {}.".format(e))
 
     return annotated_pubtator_abstracts
+
+
+def _filter_passages(passages: list[dict[Any, Any]]) -> list[dict[Any, Any]]:
+    keep_passages = []
+    for passage in passages:
+        # We care about it if it doesnt contain annotations
+        if "annotation" in passage:
+            passage["infon"]
+
+
+def get_section_type(passage: dict[Any, Any]) -> Optional[str]:
+    """Gets the section type information from the passage"""
+    section_type = None
+    section_type_dict = [p for p in passage["infon"] if p["@key"] == "section_type"]
+    if len(section_type_dict) > 0:
+        section_type = section_type_dict[0].get("#text")
+    return section_type
+
+
+def parse_annotations(annotations: list[collections.OrderedDict[str, str]]) -> list[list[str]]:
+    """Pull out and neaten the annotations."""
+    data_list = []
+    for annotation in annotations:
+        # Get the text
+        data = {"text": annotation.get("text")}
+
+        # New get the identifier and the type
+        infon = annotation.get("infon")
+        if isinstance(infon, list):
+            for ann in annotation.get("infon"):
+                key = ann.get("@key")
+                if key in ("identifier", "type"):
+                    data[key] = ann["#text"]
+
+        # Provided the data is all there, add to the full data list
+        if all(x in data for x in ["identifier", "type"]):
+            data_list.append([data["identifier"].replace("MESH:", ""), data["type"], data["text"]])
+
+    return data_list
+
+
+def list_mentions_to_dict(mentions: list[list[str]]) -> dict[str, dict[str, list[str]]]:
+    """Converts a list of [id, type, text] into a dictionary of {type: {id: [text1,text2, ...]}}"""
+    # Create an initial dict containing the types
+    mentions_frame = pd.DataFrame(mentions, columns=["id", "type", "mentions"])
+    mentions_frame = mentions_frame.groupby(["type", "id"], as_index=True)["mentions"].apply(
+        lambda x: list(set(x.tolist()))
+    )
+
+    mentions_dict = {}
+    for tp in mentions_frame.index.get_level_values(0).unique():
+        mentions_dict[tp] = mentions_frame.loc[tp].to_dict()
+
+    return mentions_dict
+
+
+def append_text(old_text: str, new_text: str) -> str:
+    """Some basic append rules with punctuation additions."""
+    if len(old_text) == 0:
+        text = new_text
+    elif old_text[-1] in (".", "?", "!"):
+        text = old_text + " " + new_text
+    else:
+        text = old_text + ". " + new_text
+    return text
+
+
+def parse_pubtator_pmc_request_string(
+    request_string: str, required_concepts: Optional[tuple[str]] = ("Disease",)
+) -> list[AnnotatedPubtatorAbstract]:
+    """Handles the parsing of multiple annotated abstracts returned from a pubtator request.
+
+    This splits the string into sections as indexed by the passages in the xml. Each is made its own
+    AnnotatedPubtatorAbstract and given an additional section_count field to keep track. Text is only kept if disease
+    and chemical or gene are present.
+
+    Args:
+        request_string: The output of the pmc xml request.
+        required_concepts: The required concepts to keep the text.
+    """
+    # Make dict and get the only bits that matter
+    xml_dict = xmltodict.parse(request_string, process_namespaces=True, xml_attribs=True)
+    docs = xml_dict["collection"]["document"]
+    docs = docs if isinstance(docs, list) else [docs]
+
+
+    # Iterate through each doc and get the pmcid and concatenated text
+    outputs = []
+    for doc in docs:
+        pmcid = "PMC" + doc["id"]
+        section_count = 1
+
+        for passage in doc["passage"]:
+            # Require multiple annotations, i.e. a list
+            if not isinstance(passage, collections.OrderedDict):
+                continue
+            annotations = passage.get("annotation")
+            if not isinstance(annotations, list):
+                continue
+
+            # Find the annotations
+            mentions = list_mentions_to_dict(parse_annotations(annotations))
+
+            # Check if the passage has the required concepts
+            if required_concepts:
+                if not all(s in mentions for s in required_concepts):
+                    continue
+
+            # Get the text
+            text = passage.get("text")
+            abstract_obj = AnnotatedPubtatorAbstract(pmcid, text, mentions)
+            abstract_obj.section_count = section_count
+
+            # Add to outputs and update
+            outputs.append(abstract_obj)
+            section_count += 1
+
+    return outputs
 
 
 def _parse_single_annotated_abstract(
