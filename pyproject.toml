@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pubtator"
-version = "0.1.5"
+version = "0.1.7"
 description = ""
 authors = ["James Morrill <james.morrill.6@gmail.com>"]
 
