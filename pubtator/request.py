@@ -7,6 +7,7 @@ import logging
 from typing import Union
 from enum import Enum
 
+import omni
 import requests
 
 

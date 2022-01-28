@@ -8,6 +8,7 @@ from typing import Any
 from typing import Dict, List, Tuple, Optional
 
 import numpy as np
+import omni
 import pandas as pd
 import xmltodict
 
@@ -154,8 +155,8 @@ def append_text(old_text: str, new_text: str) -> str:
 
 
 def parse_pubtator_pmc_request_string(
-    request_string: str, required_concepts: Optional[tuple[str]] = ("Disease",)
-) -> list[AnnotatedPubtatorAbstract]:
+    request_string: str, required_concepts: Optional[tuple[str]] = ("Disease",), pmc_to_pmid: dict[str, int] = None
+) -> list[list[AnnotatedPubtatorAbstract]]:
     """Handles the parsing of multiple annotated abstracts returned from a pubtator request.
 
     This splits the string into sections as indexed by the passages in the xml. Each is made its own
@@ -165,24 +166,35 @@ def parse_pubtator_pmc_request_string(
     Args:
         request_string: The output of the pmc xml request.
         required_concepts: The required concepts to keep the text.
+        pmc_to_pmid: An optional dictionary that maps the pmc back to the pmid for the id.
+
+    Returns:
+        A list of lists of AnnotatedPubtatorAbstracts where each inner list contains the abstract for one single pmcid.
     """
     # Make dict and get the only bits that matter
     xml_dict = xmltodict.parse(request_string, process_namespaces=True, xml_attribs=True)
     docs = xml_dict["collection"]["document"]
     docs = docs if isinstance(docs, list) else [docs]
 
-
     # Iterate through each doc and get the pmcid and concatenated text
     outputs = []
     for doc in docs:
+        # Setup id
         pmcid = "PMC" + doc["id"]
+        if pmc_to_pmid:
+            pmcid = pmc_to_pmid[pmcid]
+
         section_count = 1
+        pmcid_outputs = []
 
         for passage in doc["passage"]:
             # Require multiple annotations, i.e. a list
             if not isinstance(passage, collections.OrderedDict):
                 continue
+
+            # Get annotations, skip if they do not exist
             annotations = passage.get("annotation")
+            annotations = [annotations] if isinstance(annotations, collections.OrderedDict) else annotations
             if not isinstance(annotations, list):
                 continue
 
@@ -200,8 +212,12 @@ def parse_pubtator_pmc_request_string(
             abstract_obj.section_count = section_count
 
             # Add to outputs and update
-            outputs.append(abstract_obj)
+            pmcid_outputs.append(abstract_obj)
             section_count += 1
+
+        # Add if we had a passage added
+        if len(pmcid_outputs) > 0:
+            outputs.append(pmcid_outputs)
 
     return outputs
 
